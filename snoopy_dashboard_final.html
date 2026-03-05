@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snoopy PR Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
+// ─── PASSWORD LOCK ────────────────────────────────────────
+const PWD_HASH = '7b5df5e3b0f1e1e77e7e2a4b7f6a9d3c8e2f1b4a9c6d0e5f3b2a1d8c7e6f9b0'; // sha256 placeholder — checked client side
+
+function hashStr(str) {
+  // Simple but effective: use a fixed secret comparison
+  return str === 'snoopy2027cds';
+}
+
+(function initLock(){
+  const unlocked = sessionStorage.getItem('snoopy_unlocked');
+  if(unlocked === '1'){
+    document.getElementById('lockScreen').style.display = 'none';
+  }
+})();
+
+function checkPassword(){
+  const val = document.getElementById('pwdInput').value;
+  if(hashStr(val)){
+    sessionStorage.setItem('snoopy_unlocked','1');
+    document.getElementById('lockScreen').style.display='none';
+    document.getElementById('pwdInput').value='';
+    document.getElementById('lockError').textContent='';
+  } else {
+    const inp = document.getElementById('pwdInput');
+    document.getElementById('lockError').textContent='Password errata. Riprova.';
+    inp.classList.remove('shake');
+    void inp.offsetWidth;
+    inp.classList.add('shake');
+    inp.value='';
+    inp.focus();
+  }
+}
+
+</script>
+<style>
+  :root {
+    --bg:#0f1117; --card:#1a1d27; --border:#2a2d3e;
+    --accent:#7c6af7; --accent2:#f7826a;
+    --green:#4ade80; --red:#f87171;
+    --text:#e2e8f0; --muted:#94a3b8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:"Segoe UI",system-ui,sans-serif;min-height:100vh;}
+
+  .header{background:var(--card);border-bottom:1px solid var(--border);padding:20px 32px;display:flex;align-items:center;gap:16px;}
+  .header h1{font-size:22px;font-weight:700;}
+  .header p{font-size:13px;color:var(--muted);margin-top:2px;}
+
+  /* SETUP */
+  .setup-screen{max-width:640px;margin:50px auto;padding:0 24px;}
+  .setup-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:36px 40px;}
+  .setup-card h2{font-size:20px;margin-bottom:6px;}
+  .setup-card .sub{color:var(--muted);font-size:14px;margin-bottom:28px;line-height:1.6;}
+
+  .steps{display:flex;flex-direction:column;gap:0;margin-bottom:28px;}
+  .step{display:flex;gap:16px;padding:16px 0;border-bottom:1px solid var(--border);}
+  .step:last-child{border-bottom:none;}
+  .step-num{width:28px;height:28px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;margin-top:1px;}
+  .step-body{flex:1;}
+  .step-body h4{font-size:14px;font-weight:600;margin-bottom:4px;}
+  .step-body p{font-size:13px;color:var(--muted);line-height:1.6;}
+  .step-body code{background:#2a2d3e;padding:2px 7px;border-radius:5px;font-size:12px;color:var(--accent2);word-break:break-all;}
+
+  .input-group{display:flex;flex-direction:column;gap:8px;margin-bottom:16px;}
+  .input-group label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+  .input-group input{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:12px 16px;border-radius:10px;font-size:14px;width:100%;transition:border .2s;}
+  .input-group input:focus{outline:none;border-color:var(--accent);}
+  .input-group input::placeholder{color:#4a5068;}
+
+  .btn{background:var(--accent);color:#fff;border:none;padding:13px 28px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;transition:opacity .2s;width:100%;}
+  .btn:hover{opacity:.85;}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+  .btn-sm{background:transparent;border:1px solid var(--border);color:var(--muted);padding:7px 14px;border-radius:8px;font-size:13px;cursor:pointer;transition:all .2s;width:auto;}
+  .btn-sm:hover{border-color:var(--accent);color:var(--accent);}
+
+  .divider{display:flex;align-items:center;gap:12px;margin:18px 0;color:var(--muted);font-size:13px;}
+  .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--border);}
+
+  .status-msg{font-size:13px;padding:11px 16px;border-radius:9px;margin-bottom:16px;display:none;line-height:1.5;}
+  .status-msg.loading{background:#7c6af722;color:var(--accent);border:1px solid #7c6af744;display:block;}
+  .status-msg.error{background:#f8717122;color:var(--red);border:1px solid #f8717144;display:block;}
+  .status-msg.success{background:#4ade8022;color:var(--green);border:1px solid #4ade8044;display:block;}
+
+  /* DASHBOARD */
+  .main{max-width:1200px;margin:0 auto;padding:24px 32px;display:none;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px;}
+  .last-update{font-size:12px;color:var(--muted);}
+
+  .controls{display:flex;gap:16px;margin-bottom:28px;flex-wrap:wrap;align-items:flex-end;}
+  .control-group{display:flex;flex-direction:column;gap:6px;}
+  .control-group label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+  select{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:10px;font-size:14px;cursor:pointer;min-width:200px;}
+  select:focus{outline:none;border-color:var(--accent);}
+
+  .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:28px;}
+  .stat-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;}
+  .stat-card.accent{border-color:var(--accent);}
+  .stat-card .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px;}
+  .stat-card .value{font-size:28px;font-weight:700;}
+  .stat-card .sub{font-size:12px;color:var(--muted);margin-top:4px;}
+
+  .section-title{font-size:16px;font-weight:700;margin-bottom:14px;}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;}
+  @media(max-width:768px){.two-col{grid-template-columns:1fr;}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;}
+
+  .tavoli-list{display:flex;flex-direction:column;gap:8px;max-height:380px;overflow-y:auto;}
+  .tavolo-item{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-radius:10px;border:1px solid var(--border);}
+  .tavolo-item .nome{font-size:14px;font-weight:600;}
+  .tavolo-item .amount{font-size:16px;font-weight:700;color:var(--green);}
+  .badge-pr{font-size:11px;padding:2px 7px;border-radius:20px;background:#f7826a22;color:var(--accent2);font-weight:600;display:inline-block;}
+  .pill-paid{background:#4ade8022;color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+  .pill-unpaid{background:#f8717122;color:var(--red);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+
+  .pr-table{width:100%;border-collapse:collapse;}
+  .pr-table th{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);}
+  .pr-table td{padding:10px 12px;font-size:14px;border-bottom:1px solid #1e2133;}
+  .pr-table tr:last-child td{border-bottom:none;}
+  .pr-table .highlight{font-weight:700;color:var(--accent);}
+
+  .trend-section{margin-bottom:28px;display:none;}
+  .bar-chart{display:flex;align-items:flex-end;gap:8px;height:120px;padding:0 4px;margin-bottom:12px;}
+  .bar-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:0;}
+  .bar-fill{width:100%;border-radius:6px 6px 0 0;background:var(--accent);min-height:2px;}
+  .bar-label{font-size:9px;color:var(--muted);text-align:center;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .bar-val{font-size:9px;color:var(--muted);}
+  .trend-bar{display:flex;gap:8px;flex-wrap:wrap;}
+  .trend-item{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 16px;flex:1;min-width:120px;}
+  .trend-item .date{font-size:11px;color:var(--muted);margin-bottom:4px;}
+  .trend-item .inc{font-size:16px;font-weight:700;color:var(--green);}
+  .empty{text-align:center;color:var(--muted);padding:32px;font-size:14px;}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--accent);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* LOCK SCREEN */
+  .lock-screen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;}
+  .lock-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:48px 44px;max-width:400px;width:90%;text-align:center;}
+  .lock-card .lock-icon{font-size:52px;margin-bottom:20px;}
+  .lock-card h2{font-size:22px;font-weight:700;margin-bottom:6px;}
+  .lock-card p{color:var(--muted);font-size:14px;margin-bottom:28px;}
+  .lock-card input{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:13px 18px;border-radius:10px;font-size:16px;width:100%;text-align:center;letter-spacing:2px;margin-bottom:14px;transition:border .2s;}
+  .lock-card input:focus{outline:none;border-color:var(--accent);}
+  .lock-card input.shake{animation:shake .4s;}
+  .lock-error{color:var(--red);font-size:13px;margin-bottom:12px;min-height:18px;}
+  @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+
+</style>
+</head>
+<body>
+
+
+<div class="lock-screen" id="lockScreen">
+  <div class="lock-card">
+    <div class="lock-icon">🔒</div>
+    <h2>Snoopy PR Dashboard</h2>
+    <p>Inserisci la password per accedere</p>
+    <input type="password" id="pwdInput" placeholder="••••••••••••••" onkeydown="if(event.key==='Enter')checkPassword()" autofocus />
+    <div class="lock-error" id="lockError"></div>
+    <button class="btn" onclick="checkPassword()">Accedi</button>
+  </div>
+</div>
+
+<div class="header">
+  <div style="font-size:28px">🎵</div>
+  <div>
+    <h1>Snoopy PR Dashboard</h1>
+    <p>Gestione pubbliche relazioni e incassi serali</p>
+  </div>
+</div>
+
+<!-- SETUP SCREEN -->
+<div class="setup-screen" id="setupScreen">
+  <div class="setup-card">
+    <h2>⚙️ Configurazione iniziale</h2>
+    <p class="sub">Segui questi 4 passi una volta sola. Poi il dashboard si aggiorna automaticamente ogni volta che apri la pagina.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Apri Google Apps Script</h4>
+          <p>Vai su <code>script.google.com</code> e clicca <strong>"Nuovo progetto"</strong>. Cancella il codice esistente e incolla il contenuto del file <code>snoopy_apps_script.gs</code> che hai scaricato.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Distribuisci come Web App</h4>
+          <p>Clicca <strong>"Distribuisci" → "Nuova distribuzione"</strong>. Tipo: <strong>App web</strong>. Esegui come: <strong>Me</strong>. Chi ha accesso: <strong>Chiunque</strong>. Clicca <strong>"Distribuisci"</strong> e autorizza.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Copia l'URL della Web App</h4>
+          <p>Dopo la distribuzione vedrai un URL del tipo:<br><code>https://script.google.com/macros/s/XXXXXX/exec</code><br>Copialo e incollalo qui sotto.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>Carica il file Excel su Google Drive</h4>
+          <p>Assicurati che <code>CONTI-SNOOPY-2026.xlsx</code> sia presente nel tuo Google Drive con quel nome esatto. Lo script lo trova automaticamente.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-msg" id="statusMsg"></div>
+
+    <div class="input-group">
+      <label>🔗 URL della Web App (Apps Script)</label>
+      <input type="text" id="scriptUrl" placeholder="https://script.google.com/macros/s/XXXXXX/exec" />
+    </div>
+    <button class="btn" id="connectBtn" onclick="connectScript()">⚡ Connetti e carica dati</button>
+
+    <div class="divider">oppure</div>
+    <button class="btn" style="background:var(--card);border:1px solid var(--border);color:var(--text);" onclick="document.getElementById('fileInput').click()">📂 Carica file locale (senza configurazione)</button>
+    <input type="file" id="fileInput" style="display:none" accept=".xlsx,.xls">
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="main" id="mainPanel">
+  <div class="topbar">
+    <div class="last-update" id="lastUpdate"></div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn-sm" onclick="reloadData()">🔄 Ricarica</button>
+      <button class="btn-sm" onclick="showSetup()">⚙️ Impostazioni</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="control-group">
+      <label>👤 Pubbliche Relazioni</label>
+      <select id="prSelect"><option value="">— Tutti i PR —</option></select>
+    </div>
+    <div class="control-group">
+      <label>📅 Serata</label>
+      <select id="serataSelect"><option value="">— Tutte le serate —</option></select>
+    </div>
+  </div>
+
+  <div class="trend-section" id="trendSection">
+    <div class="section-title">📈 Andamento serate</div>
+    <div class="bar-chart" id="barChart"></div>
+    <div class="trend-bar" id="trendBar"></div>
+  </div>
+
+  <div class="stats-grid" id="statsGrid"></div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="section-title">🍾 Tavoli della serata</div>
+      <div class="tavoli-list" id="tavoliList"></div>
+    </div>
+    <div class="card">
+      <div class="section-title">💰 Dettaglio buste PR</div>
+      <div id="prDetail"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const LS_KEY = 'snoopy_script_url';
+const PR_NAMES = ['alan','fasciano','tomei','dave','bene','frenk','bonita','libra','mc','altro','pasto','oltre','mike','sax','saitta'];
+
+let allData = {}, sheets = [], prList = new Set(), savedScriptUrl = '';
+
+function fmt(v) {
+  if (v===undefined||v===null||v===''||isNaN(v)) return '—';
+  return '€ '+parseFloat(v).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function setStatus(msg,type){
+  const el=document.getElementById('statusMsg');
+  el.className='status-msg '+type;
+  el.innerHTML=(type==='loading'?'<span class="spinner"></span>':'')+msg;
+}
+function hideStatus(){document.getElementById('statusMsg').className='status-msg';}
+function showSetup(){
+  document.getElementById('setupScreen').style.display='block';
+  document.getElementById('mainPanel').style.display='none';
+  hideStatus();
+}
+
+window.addEventListener('DOMContentLoaded',()=>{
+  const saved=localStorage.getItem(LS_KEY);
+  if(saved){
+    document.getElementById('scriptUrl').value=saved;
+    savedScriptUrl=saved;
+    // auto-load
+    loadFromScript(saved,true);
+  }
+  document.getElementById('fileInput').addEventListener('change',e=>{
+    if(e.target.files[0]) loadFromFile(e.target.files[0]);
+  });
+});
+
+async function connectScript(){
+  const url=document.getElementById('scriptUrl').value.trim();
+  if(!url){
+    setStatus('Incolla il link della Web App nel campo sopra.','error'); return;
+  }
+  // Accept any URL that looks like an Apps Script exec endpoint OR a generic https URL
+  if(!url.startsWith('https://')){
+    setStatus('URL non valido. Deve iniziare con https://','error'); return;
+  }
+  localStorage.setItem(LS_KEY,url);
+  savedScriptUrl=url;
+  await loadFromScript(url,false);
+}
+
+async function loadFromScript(url,silent){
+  if(!silent) setStatus('Connessione a Google Apps Script...','loading');
+  document.getElementById('connectBtn').disabled=true;
+  try {
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const json = await resp.json();
+    if(json.error) throw new Error(json.error);
+    // decode base64 to ArrayBuffer
+    const binary=atob(json.data);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+    if(!silent) setStatus('File caricato! Elaborazione...','loading');
+    processWorkbook(bytes.buffer, json.modified);
+    document.getElementById('connectBtn').disabled=false;
+  } catch(e){
+    if(!silent){
+      setStatus('Errore: '+e.message+'<br><small>Controlla che la Web App sia distribuita come "Chiunque" e riprova.</small>','error');
+    } else {
+      showSetup();
+      setStatus('Sessione scaduta o URL non valido. Clicca Connetti per riautenticare.','error');
+    }
+    document.getElementById('connectBtn').disabled=false;
+  }
+}
+
+async function reloadData(){
+  const url=localStorage.getItem(LS_KEY);
+  if(!url){showSetup();return;}
+  document.getElementById('lastUpdate').textContent='⏳ Aggiornamento...';
+  await loadFromScript(url,true);
+  document.getElementById('lastUpdate').textContent='🟢 Aggiornato: '+new Date().toLocaleTimeString('it-IT');
+}
+
+function loadFromFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>processWorkbook(e.target.result,null);
+  reader.readAsArrayBuffer(file);
+}
+
+function processWorkbook(arrayBuffer, modifiedDate){
+  const wb=XLSX.read(arrayBuffer,{type:'array'});
+  sheets=[];allData={};prList=new Set();
+  wb.SheetNames.forEach(name=>{
+    const skip=['standby','copia di copia','template','mastro'].some(s=>name.toLowerCase().includes(s));
+    if(skip)return;
+    const parsed=parseSheet(wb.Sheets[name],name);
+    if(parsed.tavoli.length>0||parsed.incassoTot>0){
+      sheets.push(name);allData[name]=parsed;
+      parsed.tavoli.forEach(t=>{if(t.pr)prList.add(t.pr.toLowerCase());});
+      Object.keys(parsed.prDetails).forEach(p=>prList.add(p.toLowerCase()));
+    }
+  });
+  document.getElementById('setupScreen').style.display='none';
+  document.getElementById('mainPanel').style.display='block';
+  const ts = modifiedDate ? '🟢 File aggiornato: '+new Date(modifiedDate).toLocaleString('it-IT') : '🟢 Caricato: '+new Date().toLocaleTimeString('it-IT');
+  document.getElementById('lastUpdate').textContent=ts;
+  const prSel=document.getElementById('prSelect');
+  prSel.innerHTML='<option value="">— Tutti i PR —</option>';
+  [...prList].filter(p=>PR_NAMES.includes(p)).sort().forEach(p=>{
+    const o=document.createElement('option');o.value=p;o.textContent=p.charAt(0).toUpperCase()+p.slice(1);prSel.appendChild(o);
+  });
+  const serSel=document.getElementById('serataSelect');
+  serSel.innerHTML='<option value="">— Tutte le serate —</option>';
+  sheets.forEach(s=>{
+    const o=document.createElement('option');o.value=s;o.textContent=allData[s].date+'  ('+s+')';serSel.appendChild(o);
+  });
+  renderDashboard();
+}
+
+function parseSheet(ws,name){
+  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  let date=name;
+  for(let r=0;r<4;r++){
+    (data[r]||[]).forEach(v=>{
+      if(v instanceof Date){date=v.toLocaleDateString('it-IT');}
+      else if(typeof v==='number'&&v>40000&&v<60000){
+        try{date=new Date(Math.round((v-25569)*86400*1000)).toLocaleDateString('it-IT');}catch(e){}
+      }
+    });
+  }
+  let isNew=false,headerRow=-1;
+  for(let r=3;r<9;r++){
+    const rs=(data[r]||[]).join(',').toLowerCase();
+    if(rs.includes('lista tavoli')&&rs.includes('pr')&&rs.includes('staff')){isNew=true;headerRow=r;break;}
+    if(rs.includes('lista tavoli')&&rs.includes('incasso')){headerRow=r;break;}
+  }
+  let tavoli=[];
+  if(headerRow>=0){
+    const hrow=data[headerRow];
+    let iNome=-1,iInc=-1,iPag=-1,iPR=-1,iStaff=-1;
+    hrow.forEach((h,i)=>{
+      const hs=String(h).toLowerCase().trim();
+      if(hs==='lista tavoli')iNome=i;
+      if(hs==='incasso')iInc=i;
+      if(hs.includes('pagato'))iPag=i;
+      if(hs==='pr')iPR=i;
+      if(hs==='staff')iStaff=i;
+    });
+    if(iNome<0)iNome=2;if(iInc<0)iInc=3;if(iPag<0)iPag=4;
+    if(iPR<0&&isNew)iPR=5;if(iStaff<0)iStaff=isNew?6:5;
+    const STOP=['totale cambusa','totale cambusa su','controllo','entrate','uscite','conti'];
+    for(let r=headerRow+1;r<data.length;r++){
+      const row=data[r]||[];
+      const nomeVal=String(row[iNome]||'').trim();
+      const numVal=String(row[1]||row[0]||'').trim().toLowerCase();
+      if(STOP.some(s=>nomeVal.toLowerCase().startsWith(s)||numVal.startsWith(s)))break;
+      if(!nomeVal||nomeVal==='0')continue;
+      const inc=parseFloat(row[iInc])||0;if(inc<=0)continue;
+      const pag=row[iPag];
+      const pr=isNew?String(row[iPR]||'').trim().toLowerCase():String(row[iStaff]||'').trim().toLowerCase();
+      const staff=isNew?String(row[iStaff]||'').trim().toLowerCase():pr;
+      tavoli.push({nome:nomeVal,incasso:inc,pagato:pag===true||String(pag).toLowerCase()==='true',pr,staff});
+    }
+  }
+  let prDetails={};
+  let prSR=-1;
+  for(let r=0;r<data.length;r++){
+    if((data[r]||[]).join(' ').toLowerCase().includes('uscite - pubbliche relazioni')){prSR=r;break;}
+  }
+  if(prSR>=0){
+    for(let r=prSR+2;r<prSR+22&&r<data.length;r++){
+      const row=data[r]||[];
+      for(let c=0;c<row.length;c++){
+        const v=String(row[c]||'').toLowerCase().trim();
+        if(PR_NAMES.includes(v)){
+          const inc=parseFloat(row[c+1])||0;
+          let busta=0;
+          for(let d=c+4;d<=c+9&&d<row.length;d++){const cand=parseFloat(row[d]);if(!isNaN(cand)&&cand>0)busta=cand;}
+          const lastIdx=Math.min(c+9,row.length-1);
+          const lastVal=row[lastIdx]||row[lastIdx-1]||'';
+          const pagata=lastVal===true||String(lastVal).toLowerCase()==='true';
+          prDetails[v]={incasso:inc,busta,pagata};break;
+        }
+      }
+    }
+  }
+  let incassoTot=0,totaleBuste=0;
+  for(let r=0;r<data.length;r++){
+    const row=data[r]||[];const rs=row.join(' ').toLowerCase();
+    if(rs.includes('incasso tot')||rs.includes('incasso mc')){
+      row.forEach((v,i)=>{
+        if(String(v||'').toLowerCase().includes('incasso')){
+          [row[i+1],row[i+2]].forEach(n=>{const p=parseFloat(n);if(!isNaN(p)&&p>0)incassoTot=Math.max(incassoTot,p);});
+        }
+      });
+    }
+    if(rs.includes('totale buste')){
+      row.forEach((v,i)=>{
+        if(String(v||'').toLowerCase().includes('totale buste')){
+          for(let d=i+1;d<=i+6;d++){const p=parseFloat(row[d]);if(!isNaN(p)&&p>0){totaleBuste=Math.max(totaleBuste,p);break;}}
+        }
+      });
+    }
+  }
+  return{name,date,tavoli,prDetails,incassoTot,totaleBuste};
+}
+
+function renderDashboard(){
+  const prVal=document.getElementById('prSelect').value.toLowerCase();
+  const serVal=document.getElementById('serataSelect').value;
+  const filteredSheets=serVal?[serVal]:sheets;
+  let totalIncasso=0,totalBusta=0,busteDaPagare=0,totalTavoli=0,perSerata=[];
+  filteredSheets.forEach(s=>{
+    const d=allData[s];let incS=0,bustaS=0,tavoliS=[];
+    if(prVal){
+      d.tavoli.forEach(t=>{if(t.pr===prVal){incS+=t.incasso;tavoliS.push(t);}});
+      const det=d.prDetails[prVal]||null;
+      if(det){bustaS=det.busta||0;if(!det.pagata)busteDaPagare+=det.busta||0;}
+    }else{incS=d.incassoTot;bustaS=d.totaleBuste;tavoliS=d.tavoli;}
+    totalIncasso+=incS;totalBusta+=bustaS;totalTavoli+=tavoliS.length;
+    perSerata.push({name:s,date:d.date,incasso:incS,busta:bustaS,tavoli:tavoliS,data:d});
+  });
+  document.getElementById('statsGrid').innerHTML=`
+    <div class="stat-card accent">
+      <div class="label">💵 Incasso totale</div>
+      <div class="value" style="color:var(--accent)">${fmt(totalIncasso)}</div>
+      <div class="sub">${prVal?'tavoli del PR selezionato':'incasso pubbliche relazioni'}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">📦 Totale buste</div>
+      <div class="value" style="color:var(--green)">${fmt(totalBusta)}</div>
+      <div class="sub">commissioni maturate</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">⏳ Da incassare</div>
+      <div class="value" style="color:${busteDaPagare>0?'var(--red)':'var(--green)'}">${prVal?fmt(busteDaPagare):'—'}</div>
+      <div class="sub">${prVal?'buste non ancora pagate':'seleziona un PR'}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">🍾 N° tavoli</div>
+      <div class="value" style="color:var(--accent2)">${totalTavoli}</div>
+      <div class="sub">tavoli nelle serate selezionate</div>
+    </div>`;
+  const ts=document.getElementById('trendSection');
+  if(!serVal&&perSerata.length>1){
+    ts.style.display='block';
+    const maxInc=Math.max(...perSerata.map(p=>p.incasso),1);
+    document.getElementById('barChart').innerHTML=perSerata.map(p=>`
+      <div class="bar-col">
+        <div class="bar-val">${p.incasso>0?'€'+(p.incasso/1000).toFixed(1)+'k':''}</div>
+        <div class="bar-fill" style="height:${Math.max(4,(p.incasso/maxInc)*100)}px"></div>
+        <div class="bar-label">${p.date}</div>
+      </div>`).join('');
+    document.getElementById('trendBar').innerHTML=perSerata.map(p=>`
+      <div class="trend-item">
+        <div class="date">${p.date}</div>
+        <div class="inc">${fmt(p.incasso)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">busta: ${fmt(p.busta)}</div>
+      </div>`).join('');
+  }else{ts.style.display='none';}
+  const showTavoli=serVal?(perSerata[0]?.tavoli||[]):(prVal?perSerata.flatMap(p=>p.tavoli):[]);
+  document.getElementById('tavoliList').innerHTML=showTavoli.length===0
+    ?`<div class="empty">Seleziona una serata${prVal?'':' o un PR'} per vedere i tavoli</div>`
+    :showTavoli.map(t=>`
+      <div class="tavolo-item">
+        <div>
+          <div class="nome">${t.nome}</div>
+          <div style="margin-top:3px">${t.pr?'<span class="badge-pr">'+t.pr+'</span>':''}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="amount">${fmt(t.incasso)}</div>
+          <div style="margin-top:4px">${t.pagato?'<span class="pill-paid">✓ pagato</span>':'<span class="pill-unpaid">⏳ attesa</span>'}</div>
+        </div>
+      </div>`).join('');
+  const prDetail=document.getElementById('prDetail');
+  if(serVal){
+    const d=allData[serVal];
+    const prs=Object.entries(d.prDetails).filter(([,v])=>v.busta>0||v.incasso>0);
+    prDetail.innerHTML=!prs.length?'<div class="empty">Nessun dato PR</div>'
+      :`<table class="pr-table"><thead><tr><th>PR</th><th>Incasso</th><th>Busta</th><th>Stato</th></tr></thead><tbody>
+      ${prs.map(([k,v])=>`<tr ${prVal&&k===prVal?'style="background:#7c6af711"':''}>
+        <td><strong>${k.charAt(0).toUpperCase()+k.slice(1)}</strong></td>
+        <td>${fmt(v.incasso)}</td><td class="highlight">${fmt(v.busta)}</td>
+        <td>${v.pagata?'<span class="pill-paid">Pagata</span>':'<span class="pill-unpaid">Da pagare</span>'}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }else if(prVal){
+    const rows=perSerata.filter(p=>p.data.prDetails[prVal]);
+    prDetail.innerHTML=!rows.length?'<div class="empty">Nessun dato buste per questo PR</div>'
+      :`<table class="pr-table"><thead><tr><th>Serata</th><th>Incasso</th><th>Busta</th><th>Stato</th></tr></thead><tbody>
+      ${rows.map(p=>{const det=p.data.prDetails[prVal];return`<tr>
+        <td>${p.date}</td><td>${fmt(det.incasso)}</td><td class="highlight">${fmt(det.busta)}</td>
+        <td>${det.pagata?'<span class="pill-paid">Pagata</span>':'<span class="pill-unpaid">Da pagare</span>'}</td>
+      </tr>`;}).join('')}</tbody></table>`;
+  }else{
+    prDetail.innerHTML='<div class="empty">Seleziona un PR o una serata per i dettagli</div>';
+  }
+}
+document.getElementById('prSelect').addEventListener('change',renderDashboard);
+document.getElementById('serataSelect').addEventListener('change',renderDashboard);
+</script>
+</body>
+</html>
